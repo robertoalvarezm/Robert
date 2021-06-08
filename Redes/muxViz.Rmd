@@ -1,0 +1,175 @@
+---
+title: "muxViz"
+author: "Víctor LV"
+date: "7/6/2021"
+output: pdf_document
+---
+##Se cargan los paquetes pertinentes.
+```{r}
+library(muxViz)
+library(igraph)
+```
+#Generación de matrices de supradyacencia
+El comando GetSampleMultiplex() tiene como input el número de capas y el número de nodos, así como p, que es la probabilidad de conexión. Su output es una
+matriz de supradyasencia de los nodos de todas las capas.
+```{r}
+layers <- 3
+nodes <- 10
+p <- 0.4
+sam <- GetSampleMultiplex(Layers <- layers, Nodes <- nodes, p <- p)
+sam
+```
+La función BuildExtendedEdgelistFromSupraAdjacencyMatrix() tiene como input el número de capas, el número de nodos y la matriz de supradyacencia. De igual
+modo, se concidera si las redes constituyentes son o no dirigidas. El output
+es un data.frame que contiene columnas indicando las conexiones entre los nodos,
+las conexiones entre las capas y el peso de las conexiones.
+```{r}
+tb <- BuildExtendedEdgelistFromSupraAdjacencyMatrix(
+  SupraAdjacencyMatrix = sam,
+  Layers,
+  Nodes,
+  isDirected = F
+)
+tb
+```
+El comando BuildLayersTensor() tiene como input el número de capas, el parámetro
+omega, que indica el peso de las conexiones entre las capas. Finalmente podemos
+destacar el factor MultisliceType: "ordered" significa que las capas están
+conectadas en cadena y que no están dirigidas (redes multiplex), "temporal"
+se usa para redes que están conectadas en cadena pero están dirigidas, es el
+caso de las redes temporales. Mientras tanto, "categorical" indica que todas las
+capas están conectadas con todas.
+```{r}
+lT <- BuildLayersTensor(Layers = layers, OmegaParameter = 1, 
+                  MultisliceType = "categorical")
+lT
+```
+El comando BuildSupraAdjacencyMatrixFromEdgeColoredMatrices() tiene como input
+la matriz de supradyacencia y el tensor de las capas, además del número de nodos
+y el de capas.
+Devuelve una lista de matrices de adyacencia que combina ambos vectores en una
+matriz de supradyacencia [1:Layers].
+```{r}
+sam_lT <- BuildSupraAdjacencyMatrixFromEdgeColoredMatrices(
+  NodesTensor = sam,
+  LayerTensor = lT,
+  Layers = layers,
+  Nodes = nodes
+)
+sam_lT
+```
+El input de esta función es el data.frame de las conexiones entre nodos y capas,
+y sus pesos asociados; así como el número de capas y nodos, y si la red es o no
+dirigida. El resulrado es una matriz de supradyacencia [1:Layers].
+```{r}
+sam_tb <- BuildSupraAdjacencyMatrixFromExtendedEdgelist(
+  mEdges = tb,
+  Layers = layers,
+  Nodes = nodes,
+  isDirected = T
+)
+sam_tb
+```
+En teoría, esta función permite generar el tensor de capas a partir de una
+matriz supradyacencia.
+
+############
+```{r}
+SupraAdjacencyToBlockTensor(SupraAdjacencyMatrix = sam_lT, Layers = layers,
+                            Nodes = nodes)
+```
+
+
+```{r}
+g_list <- SupraAdjacencyToNetworkList(SupraAdjacencyMatrix = sam_tb,
+                                      Layers = layers, Nodes = nodes)
+g_list
+plot(g_list[[3]])
+```
+Genera una matriz de adyacencia por cada capa a partir de la matriz de
+supradyacencia.
+```{r}
+samT <- SupraAdjacencyToNodesTensor(SupraAdjacencyMatrix = sam_tb,
+                                    Layers = layers, Nodes = nodes)
+samT
+```
+#Agregación de matrices
+Se agregan las matrices de la lista de onjetos igraph en una matriz única, que
+es el equivalente a sumar todas las matrices de las capas.
+```{r}
+GetAggregateMatrixFromNetworkList(g_list)
+samT[[1]]+samT[[2]]+samT[[3]]
+```
+También se pueden agregar las capas en una única red donde estén representadas todas las interacciones presentes en todas las capas.
+```{r}
+g_ag <- GetAggregateNetworkFromNetworkList(g_list)
+plot(g_ag)
+```
+O se puede generar directamente de la matriz de supradyacencia.
+```{r}
+g_ag2 <- GetAggregateNetworkFromSupraAdjacencyMatrix(
+  SupraAdjacencyMatrix = sam,
+  Layers = layers,
+  Nodes = nodes
+)
+plot(g_ag2)
+```
+#Funciones de centralidad
+Identifica la centralidad por autoridad de cada nodo. Este tipo de centralidad se aplica a redes dirigidas, donde un nodo posee mayor "autoridad" al ser receptor de mayor número de conexiones, mientras que cuando es emisor hacia otros nodos, se considera la centralidad de Hub. LA centralidad de Hub/Autoridad, concidera ambos escenarios.
+```{r}
+GetMultiAuthCentrality(SupraAdjacencyMatrix = sam, Layers = layers,
+                       Nodes = nodes)
+```
+La centralidad por cercanía se fundamenta en la sumatoria recíproca de las distancias más cortas (mínimo de pasos para desplazarse desde un nodo a cualquier otro) desde un nodo hacia el resto de nodos de la red.
+```{r}
+GetMultiClosenessCentrality(SupraAdjacencyMatrix = sam, Layers = layers,
+                            Nodes = nodes)
+```
+La centralidad por degree se encuentra en función del número de vecinos conectados a un nodo.
+```{r}
+GetMultiDegree(SupraAdjacencyMatrix = sam, Layers = layers, Nodes = nodes,
+               isDirected = F)
+```
+La centralidad por multidegree también se basa en el número de conexiones que un nodo mantiene con sus vecinos, pero también concidera las conexiones entre las capas.
+```{r}
+GetMultiDegreeSum(SupraAdjacencyMatrix = sam, Layers = layers, Nodes = nodes,
+                  isDirected = F)
+```
+La centralidad por eigenvalores es una medida de la influencia de un nodo en la conectividad de la red. Se asigna un valor relativo a cada nodo en base a la idea de que nodos con alto score contribuyen en mayor medida a la conectividad de la red. Nodos con un valor de centralidad alta son aquellos que están conectados con múltiples nodos que a su vez poseen scores altos.
+```{r}
+GetMultiEigenvectorCentrality(SupraAdjacencyMatrix = sam, Layers = layers,
+                              Nodes = nodes)
+```
+Hub es el modelo opuesto a la centralidad por autoridad, pues este se fundamenta en el número de conexiones que emite un nodo y no en las que recibe.
+```{r}
+GetMultiHubCentrality(SupraAdjacencyMatrix = sam, Layers = layers,
+                      Nodes = nodes)
+```
+Toma en cuenta el degree de los nodos de las capas, pero no las conexiones entre capas.
+```{r}
+GetMultiInDegree(SupraAdjacencyMatrix = sam, Layers = layers, Nodes = nodes,
+                 isDirected = F)
+```
+Este incluye también las conexiones entre capas.
+```{r}
+GetMultiInDegreeSum(SupraAdjacencyMatrix =sam, Layers = layers, Nodes = nodes, isDirected = F)
+```
+Este método se fundamenta en el degree, pero también toma en cuenta el peso de las conexiones, que en este caso valen todas 1, por lo cual es igual al valor de centralidad por degree.
+```{r}
+GetMultiInStrength(SupraAdjacencyMatrix = sam, Layers = layers, Nodes = nodes,
+                   isDirected = F)
+```
+En este caso, además del número de conexiones con sus respectivos pesos, se incluyen también las conexiones entre capas y sus pesos. Tanto este como el caso anterior son prácticos para redes pesadas.
+```{r}
+GetMultiInStrengthSum(SupraAdjacencyMatrix = sam, Layers = layers,
+                      Nodes = nodes, isDirected = F)
+```
+La centralidad k-core está en función de si el nodo pertenece a un cluster que posee un papel destacable en la interconectividad de la red.
+```{r}
+GetMultiKCoreCentrality(SupraAdjacencyMatrix = sam, Layers = layers,
+                        Nodes = nodes)
+```
+Faltan varios comandos por completar. Lo iré subiendo en la semana.
+
+
+
