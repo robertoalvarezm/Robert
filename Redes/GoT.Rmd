@@ -1,0 +1,26 @@
+---
+title: "GoT"
+author: "Víctor LV"
+date: "8/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Game of Thrones Network
+Se cargan los paquetes
+
+```{r cars}
+library(igraph)
+library(readxl)
+```
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
