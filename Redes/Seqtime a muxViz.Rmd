@@ -1,0 +1,112 @@
+---
+title: "Redes temporales de microbiota"
+author: "Víctor LV"
+date: "8/6/2021"
+output: html_document
+---
+
+
+##Red tenmporal extraída del paquete seqtime
+
+La función T_Collapse() permite construír una matriz que contenga las
+abundancias relativas de los taxones. Su input es una tabla de taxones y otra de otus, además de que se selecciona con un mediante un objeto numérico el nivel
+taxonómico que se pretende abordar (dominio, phylum, clase, etc.)
+
+La conversión a frecuancia relativa se inactiva para el caso de algunos algoritmos que solo emplean como input frecuencias absolutas, tales como SparCC
+```{r}
+T_collapse<-function(T_table, O_table, names_level){
+  require(seqtime)
+  #Identifica los taxones y genera una matriz de columnas vacías
+  unq<-unique(T_table[,names_level]); unq
+  mat <- matrix(, nrow = length(O_table), ncol = 0)
+  #Fusiona los otus que pertenezcan al mismo taxón
+  for(i in 1:length(unq)){
+    a<-which(T_table[,names_level] %in% unq[i]); a
+    b<-as.matrix(colSums(O_table[a,]))
+    mat<-cbind(mat, b)
+  }
+  #Asigna los nombres a las columnas de la matriz resultante
+  colnames(mat)<-unq
+  #La matriz se transforma a valores relativos de las muestras
+  #mat<-mat/rowSums(mat)
+  return(print(mat))
+}
+```
+Se implementa el comando T_Collapse()
+```{r}
+mat<-T_collapse(T_table = david_stool_lineages,
+                O_table = david_stoolB_otus,
+                names_level = 5)
+dim(mat)
+```
+Muestras de un individuo que sufrió intoxicación por alimentos y una consecuente infección por Salmonella en el día 159.
+```{r}
+otumat1<-mat[1:158,]
+dim(otumat1)
+otumat2<-mat[159:179,]
+dim(otumat2)
+
+```
+Paquetes de inferencia de redes
+```{r}
+library(SpiecEasi)
+library(phyloseq)
+library(igraph)
+```
+Generamos las primeras dos capas con el modelo SparCC. Debido a tales problemáticas se han planteado diversos modelos que buscan enfrentar las limitaciones de los primeros algoritmos. Podemos destacar el algoritmo SparCC (Sparse Correlations for Compositional data), mismo que calcula las
+correlaciones lineales de Pearson a partir de haber aplicado previamente una transformación logarítmica a los datos, esto con el propósito de normalizarlos y reducir así la oblicuidad que pueda presentar su distribución.
+El algoritmo asume previamente que el número de componentes, ya sean estos OTUs 
+o genes, es alto; y que la mayoría de los componentes de la red no estarán fuertemente correlacionados, aunque el algoritmo es particularmente robusto a este último supuesto.
+```{r}
+sparccNet<-sparcc(otumat1)
+sparccNet <- abs(sparccNet$Cor) >= 0.2
+sparcc_g<-adj2igraph(sparccNet)
+#Se asignan los nombres de los taxones
+vertex.attributes(sparcc_g) <- list(name = colnames(otumat1))
+plot_network(sparcc_g)
+hist(degree.distribution(sparcc_g))
+tail(sort(degree(sparcc_g)), 10)
+```
+Repetimos el proceso para una segunda capa
+```{r}
+sparccNet2<-sparcc(otumat2)
+sparccNet2<- abs(sparccNet2$Cor) >= 0.2
+sparcc_g2<-adj2igraph(sparccNet2)
+#Se asignan los nombres de los taxones
+vertex.attributes(sparcc_g2) <- list(name = colnames(otumat2))
+plot_network(sparcc_g2)
+hist(degree.distribution(sparcc_g2))
+tail(sort(degree(sparcc_g2)), 10)
+```
+SPIEC-EASI se fundamenta en la independencia condicional, es decir, si en un par de nodos, ninguno de estos proporciona información adicional sobre el estado del otro, se les considera condicionalmente independientes; en cambio, sí así es y
+la correlación lineal entre sus abundancias no puede ser explicada sino es por
+la dependencia mutua, se les considera como nodos conectados. El algoritmo es parsimonioso, privilegia aquellas condiciones donde los componentes aportan una mayor cantidad de información sobre sus parejas, descartando así las posibles correlaciones indirectas. El resultado es una red no-dirigida que considera únicamente correlaciones positivas entre los OTUs.
+
+Realiza dicha tarea aplicando primero una transformación de los datos originales para luego estimar el gráfico de la red seleccionándolos por vecindad (MB) o por medio de la covarianza inversa (glasso), permitiendo en ambos casos seleccionar las conexiones que se incluirán en la red.
+```{r}
+mbNet<-spiec.easi(otumat1, method = "mb")
+mb_g<-adj2igraph(getRefit(mbNet))
+vertex.attributes(mb_g) <- list(name = colnames(otumat1))
+plot_network(mb_g)
+hist(degree.distribution(mb_g))
+tail(sort(degree(mb_g)), 10)
+```
+El algoritmo glasso no devuelve resultado alguno con esta base de datos.
+```{r}
+glassoNet<-spiec.easi(otumat1, method = "glasso")
+glasso_g<-adj2igraph(getRefit(glassoNet))
+vertex.attributes(glasso_g) <- list(name = colnames(otumat1))
+plot(glasso_g)
+```
+Integramos las capas como una lista de objetos igraph mediante el paquete muxViz
+Se visualiza la fred resultante mediante en un gráfico 3D
+```{r}
+library(muxViz)
+g.list<-list(sparcc_g, sparcc_g2)
+lay <- layoutMultiplex(g.list, layout="fr", ggplot.format=F, box=T)
+plot_multiplex3D(g.list, layer.layout=lay, layer.colors=c("red", "blue"),
+                         layer.shift.x=0.5, layer.space=2,
+                         layer.labels="auto", layer.labels.cex=2,
+                         node.size.values="auto", node.size.scale=1,
+                         show.aggregate=T)
+```
